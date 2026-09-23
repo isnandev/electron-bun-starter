@@ -1,34 +1,65 @@
-# electron-bun-starter
+# Electron Bun Starter
 
-A small monorepo starter for building one React experience that runs in the browser and in an Electron desktop shell.
+A Bun-powered monorepo starter for building one React application that runs in a browser and in an Electron desktop shell. The desktop app starts a local Bun server and loads the same Vite UI as the web app; feature logic communicates with the server over HTTP.
 
-The desktop shell starts a local Bun server and loads the same web page as the browser app. Feature code talks to the server over HTTP, so domain behavior stays in Bun instead of being split across Electron IPC handlers.
+## Create a project
 
-## Layout
+Requires [Bun](https://bun.sh/) 1.4 or newer. Choose either creation method:
 
-- `apps/server` — Bun.serve server with Effect services and HTTP contracts.
-- `apps/web` — Vite React entry point.
-- `apps/electron` — minimal Electron lifecycle shell; no feature IPC.
-- `packages/app` — shared React page used by web and desktop.
+```sh
+# Create directly from the public GitHub repository
+bun create isnandev/electron-bun-starter my-project
+
+# Or use the npm creator package
+bun create electron-bun-starter my-project
+```
+
+The destination directory must not already exist. The creator names the project and workspace packages after the destination folder and keeps the generated app private by default.
+
+```sh
+cd my-project
+bun install
+bun run dev
+```
+
+## What's included
+
+- `apps/web` — Vite + React browser application.
+- `apps/electron` — Electron desktop lifecycle shell and preload.
+- `apps/server` — local Bun HTTP server with Effect services.
+- `packages/app` — shared React experience used by web and desktop.
 - `packages/contracts` — Effect Schema API contracts.
-- `packages/shared` — shared typed API client and runtime helpers.
-- `packages/ui` — shadcn-style primitives and Tailwind theme tokens.
+- `packages/shared` — typed API client and shared runtime helpers.
+- `packages/ui` — shared UI primitives and Tailwind theme styles.
 
-## Commands
+The Electron shell loads the same web experience as the browser build. The renderer talks to the local server over HTTP; feature behavior is kept in Bun instead of being split across Electron IPC handlers.
+
+## Development commands
 
 ```sh
 bun install
-bun run dev            # Vite web + Electron; Electron starts the Bun server
-bun run build          # Build web, Bun server, and Electron main process
-bun run check          # Typecheck and run package tests
-bun run package:win    # Build and create NSIS + portable Windows packages
+bun run dev            # Start the web app and Electron; Electron starts the Bun server
+bun run dev:web        # Start only the Vite web app
+bun run dev:server     # Start only the Bun server
+bun run dev:electron   # Start only the Electron development shell
+bun run build          # Build the web app, server, and Electron main process
+bun run check          # Typecheck all packages and run tests
 ```
 
-`bun run package:win` creates both Windows installer formats in `artifacts/`:
+## Windows packaging
 
-- `Electron-Bun-Starter-0.1.0-x64.exe` — an NSIS installer.
-- `Electron-Bun-Starter-0.1.0-x64-portable.exe` — a portable executable.
+```sh
+bun run package:win      # Build NSIS installer and portable executable
+bun run package:win:dir   # Build an unpacked application directory
+```
 
-The package includes the Vite renderer and a compiled Windows Bun server, so end users do not need Bun or the source repository installed. Use `bun run package:win:dir` when you only need the unpacked Windows application directory. Packaging is currently unsigned; Windows SmartScreen may show a warning until a production code-signing certificate is configured.
+The Windows installer and portable executable are written to `artifacts/`. The package includes the Vite renderer and a compiled Windows Bun server, so end users do not need Bun or the source repository installed. Packaging is currently unsigned; Windows SmartScreen may show a warning until a production code-signing certificate is configured.
 
-The Agentic OS marker is intentionally ignored in `.gitignore`; registration remains local to the workspace daemon.
+## Creator package
+
+The npm creator package is maintained in [`create/`](create/). Its README documents usage and publishing. To release an update, bump the version in `create/package.json` and publish from that directory:
+
+```sh
+cd create
+npm publish --access public
+```

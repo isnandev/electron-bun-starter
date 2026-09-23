@@ -1,0 +1,36 @@
+{
+  "name": "create-electron-bun-starter",
+  "version": "0.1.1",
+  "description": "Scaffold a Bun + Electron + React application from the Electron Bun Starter template.",
+  "type": "module",
+  "bin": {
+    "create-electron-bun-starter": "bin/create.js"
+  },
+  "files": [
+    "bin/create.js",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isnandev/electron-bun-starter.git",
+    "directory": "create"
+  },
+  "homepage": "https://github.com/isnandev/electron-bun-starter#readme",
+  "bugs": {
+    "url": "https://github.com/isnandev/electron-bun-starter/issues"
+  },
+  "keywords": [
+    "bun",
+    "electron",
+    "react",
+    "vite",
+    "starter",
+    "template"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "degit": "^3.10.0"
+  }
+}
