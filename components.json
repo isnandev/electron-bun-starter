@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "packages/ui/src/styles.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@electron-bun-starter/ui/components",
+    "utils": "@electron-bun-starter/ui/lib/utils",
+    "ui": "@electron-bun-starter/ui/components",
+    "lib": "@electron-bun-starter/ui/lib",
+    "hooks": "@electron-bun-starter/ui/hooks"
+  },
+  "iconLibrary": "lucide"
+}

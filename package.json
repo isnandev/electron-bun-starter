@@ -1,0 +1,31 @@
+{
+  "name": "electron-bun-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "dev:web": "bun run --cwd apps/web dev",
+    "dev:server": "bun run --watch apps/server/src/index.ts",
+    "dev:electron": "bun run --cwd apps/electron dev",
+    "build": "bun run --cwd apps/web build && bun run --cwd apps/server build && bun run --cwd apps/electron build",
+    "build:server:executable": "bun run --cwd apps/server build:executable",
+    "package:win": "bun run build && bun run build:server:executable && bun run --cwd apps/electron package:win",
+    "package:win:dir": "bun run build && bun run build:server:executable && bun run --cwd apps/electron package:win:dir",
+    "typecheck": "bun run --cwd packages/contracts typecheck && bun run --cwd packages/shared typecheck && bun run --cwd packages/ui typecheck && bun run --cwd packages/app typecheck && bun run --cwd apps/server typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/electron typecheck",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run test",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/electron/dist packages/*/dist"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.0.12"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "packageManager": "bun@1.4.2"
+}

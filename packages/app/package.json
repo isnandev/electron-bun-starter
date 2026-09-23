@@ -1,0 +1,19 @@
+{
+  "name": "@electron-bun-starter/app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/app.tsx",
+    "./client": "./src/useServerStatus.ts"
+  },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@electron-bun-starter/shared": "workspace:*",
+    "@electron-bun-starter/ui": "workspace:*",
+    "effect": "^3.22.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": { "@types/react": "^19.0.0", "typescript": "^5.7.3", "vite": "^6.0.0" }
+}

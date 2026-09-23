@@ -1,0 +1,33 @@
+node_modules/
+.bun/
+
+# Build output
+dist/
+build/
+out/
+.dev/
+apps/*/.dev/
+apps/*/dist/
+apps/*/dist-electron/
+packages/*/dist/
+artifacts/
+.cache/
+coverage/
+
+# Local configuration and runtime state
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
+*.sqlite3
+
+# Agentic OS writes a machine-local registry marker here.
+agentic-os/
+.agentic-os/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
