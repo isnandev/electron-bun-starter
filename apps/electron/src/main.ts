@@ -4,12 +4,15 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolvePorts, serverUrl } from "../../../packages/shared/src/ports";
 import { generateSessionToken } from "../../../packages/shared/src/ports-runtime";
+import { requestServerShutdown } from "./serverLifecycle";
 
 let serverProcess: ChildProcess | undefined;
 let serverPort: number | undefined;
 let mainWindow: BrowserWindow | undefined;
 const sessionToken = process.env.APP_AUTH_TOKEN ?? generateSessionToken();
 let windowIsMaximized = false;
+let quitAfterServerShutdown = false;
+let serverShutdownStarted = false;
 
 function projectRoot(): string {
   return process.env.ELECTRON_PROJECT_ROOT ?? join(__dirname, "..", "..", "..");
@@ -110,6 +113,44 @@ async function startServer(): Promise<number> {
   });
   serverPort = await waitForServerPort(serverProcess);
   return serverPort;
+}
+
+function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (didExit: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.removeListener("exit", onExit);
+      child.removeListener("error", onExit);
+      resolve(didExit);
+    };
+    const onExit = () => finish(true);
+    const timeout = setTimeout(() => finish(false), timeoutMs);
+    child.once("exit", onExit);
+    child.once("error", onExit);
+  });
+}
+
+async function stopServerProcess(): Promise<void> {
+  const child = serverProcess;
+  if (!child) return;
+
+  if (serverPort !== undefined) await requestServerShutdown(serverPort, sessionToken);
+
+  let didExit = await waitForChildExit(child, 2_500);
+  if (!didExit) {
+    child.kill("SIGTERM");
+    didExit = await waitForChildExit(child, 1_000);
+  }
+  if (!didExit) {
+    child.kill("SIGKILL");
+    await waitForChildExit(child, 1_000);
+  }
+  serverProcess = undefined;
 }
 
 async function waitForServer(port: number): Promise<void> {
@@ -249,6 +290,16 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
-  serverProcess?.kill();
+app.on("before-quit", (event) => {
+  if (quitAfterServerShutdown || !serverProcess) return;
+  event.preventDefault();
+  if (serverShutdownStarted) return;
+
+  serverShutdownStarted = true;
+  void stopServerProcess()
+    .catch((error: unknown) => console.error("Failed to stop the local server cleanly", error))
+    .finally(() => {
+      quitAfterServerShutdown = true;
+      app.quit();
+    });
 });

@@ -92,13 +92,31 @@ export function handleRequest(request: Request, overrideToken?: string): Respons
 
 if (import.meta.main) {
   let server: ReturnType<typeof Bun.serve>;
+  const fetchRequest = (request: Request): Response => {
+    const { pathname } = new URL(request.url);
+    if (request.method === "POST" && pathname === "/_internal/shutdown") {
+      const shutdownToken = Bun.env.APP_AUTH_TOKEN;
+      if (!shutdownToken || request.headers.get("x-app-token") !== shutdownToken) {
+        return new Response(null, { status: 401 });
+      }
+
+      setTimeout(() => {
+        server.stop();
+        setTimeout(() => process.exit(0), 100);
+      }, 0);
+      return new Response(null, { status: 202 });
+    }
+
+    return handleRequest(request);
+  };
+
   try {
-    server = Bun.serve({ hostname: "127.0.0.1", port, fetch: (req) => handleRequest(req) });
+    server = Bun.serve({ hostname: "127.0.0.1", port, fetch: fetchRequest });
   } catch (error: unknown) {
     const err = error as { code?: string };
     if (err?.code === "EADDRINUSE" && port !== 0) {
       console.warn(`Port ${port} in use, allocating ephemeral port...`);
-      server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => handleRequest(req) });
+      server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: fetchRequest });
     } else {
       throw error;
     }

@@ -1,6 +1,9 @@
 import { join } from "node:path";
+import { createRequire } from "node:module";
 import { resolvePorts, serverUrl, webUrl } from "../../../packages/shared/src/ports";
 import { findAvailablePort, generateSessionToken } from "../../../packages/shared/src/ports-runtime";
+import { startWebDevServer } from "../../web/devServer";
+import { requestServerShutdown, waitForExit } from "./serverLifecycle";
 
 const preferredPorts = resolvePorts(process.env);
 const hasExplicitServerPort = Boolean(process.env.SERVER_PORT || process.env.PORT);
@@ -10,6 +13,7 @@ const sessionToken = process.env.APP_AUTH_TOKEN ?? generateSessionToken();
 const projectRoot = join(import.meta.dir, "..", "..", "..");
 const externalRendererUrl = process.env.ELECTRON_RENDERER_URL;
 const rendererUrl = externalRendererUrl ?? webUrl(webPort);
+const electronExecutable = createRequire(import.meta.url)("electron") as string;
 
 async function isRendererReady(url: string): Promise<boolean> {
   try {
@@ -21,6 +25,7 @@ async function isRendererReady(url: string): Promise<boolean> {
 
 async function waitForRenderer(url: string): Promise<boolean> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (shutdownRequested) return false;
     if (await isRendererReady(url)) return true;
     await Bun.sleep(250);
   }
@@ -90,6 +95,7 @@ async function waitForServerPort(server: ReturnType<typeof Bun.spawn>): Promise<
 
 async function waitForServer(port: number): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (shutdownRequested) throw new Error("Startup interrupted");
     try {
       const response = await fetch(`${serverUrl(port)}/api/health`, {
         headers: { "x-app-token": sessionToken },
@@ -103,38 +109,75 @@ async function waitForServer(port: number): Promise<void> {
   throw new Error(`Bun server did not become ready on port ${port}`);
 }
 
-function startWebServer(rendererEnvironment: Record<string, string | undefined>): ReturnType<typeof Bun.spawn> {
-  return Bun.spawn(["bun", "run", "--cwd", "apps/web", "dev"], {
-    cwd: projectRoot,
-    env: rendererEnvironment,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+async function stopBunServer(): Promise<void> {
+  if (serverStopPromise) return serverStopPromise;
+  const server = serverProcess;
+  if (!server) return;
+
+  serverStopPromise = (async () => {
+    if (serverPort !== undefined) await requestServerShutdown(serverPort, sessionToken);
+    if (await waitForExit(server.exited, 2_500)) return;
+
+    server.kill();
+    await waitForExit(server.exited, 1_000);
+  })();
+  return serverStopPromise;
+}
+
+async function closeWebServer(): Promise<void> {
+  if (webClosePromise) return webClosePromise;
+  if (!webServer) return;
+
+  webClosePromise = webServer.close();
+  return webClosePromise;
+}
+
+async function shutdownServices(): Promise<void> {
+  const results = await Promise.allSettled([closeWebServer(), stopBunServer()]);
+  for (const result of results) {
+    if (result.status === "rejected") console.error("Failed to close a development service cleanly", result.reason);
+  }
 }
 
 const buildMain = Bun.spawn(["bun", "build", "src/main.ts", "--outfile", ".dev/main.cjs", "--target", "node", "--format", "cjs", "--external", "electron"], {
+  cwd: join(projectRoot, "apps", "electron"),
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
 });
 const buildPreload = Bun.spawn(["bun", "build", "src/preload.ts", "--outfile", ".dev/preload.cjs", "--target", "node", "--format", "cjs", "--external", "electron"], {
+  cwd: join(projectRoot, "apps", "electron"),
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
 });
 
-if ((await buildMain.exited) !== 0 || (await buildPreload.exited) !== 0) {
+const [mainBuildExit, preloadBuildExit] = await Promise.all([buildMain.exited, buildPreload.exited]);
+if (mainBuildExit !== 0 || preloadBuildExit !== 0) {
   process.exit(1);
 }
 
 let serverProcess: ReturnType<typeof Bun.spawn> | undefined;
-let webProcess: ReturnType<typeof Bun.spawn> | undefined;
+let serverPort: number | undefined;
+let webServer: Awaited<ReturnType<typeof startWebDevServer>> | undefined;
 let electron: ReturnType<typeof Bun.spawn> | undefined;
+let shutdownRequested = false;
+let serverStopPromise: Promise<void> | undefined;
+let webClosePromise: Promise<void> | undefined;
+let receivedSignal: "SIGINT" | "SIGTERM" | undefined;
+
+const handleSignal = (signal: "SIGINT" | "SIGTERM") => {
+  if (shutdownRequested) return;
+  shutdownRequested = true;
+  receivedSignal = signal;
+  electron?.kill(signal);
+};
+process.once("SIGINT", () => handleSignal("SIGINT"));
+process.once("SIGTERM", () => handleSignal("SIGTERM"));
 
 try {
   serverProcess = startBunServer();
-  const serverPort = await waitForServerPort(serverProcess);
+  serverPort = await waitForServerPort(serverProcess);
   await waitForServer(serverPort);
 
   const rendererEnvironment = {
@@ -144,21 +187,24 @@ try {
     WEB_PORT: String(webPort),
     APP_AUTH_TOKEN: sessionToken,
   };
+  Object.assign(process.env, rendererEnvironment);
 
   let rendererReady = externalRendererUrl ? await isRendererReady(rendererUrl) : false;
+  if (shutdownRequested) throw new Error("Startup interrupted");
   if (!rendererReady) {
-    webProcess = startWebServer(rendererEnvironment);
+    webServer = await startWebDevServer(join(projectRoot, "apps", "web"), webPort);
     rendererReady = await waitForRenderer(rendererUrl);
   }
 
   if (!rendererReady) {
     throw new Error(`Renderer did not become ready at ${rendererUrl}. Start Vite with WEB_PORT=${webPort}.`);
   }
+  if (shutdownRequested) throw new Error("Startup interrupted");
 
   const devPreloadPath = join(projectRoot, "apps", "electron", ".dev", "preload.cjs");
 
-  electron = Bun.spawn(["electron", ".dev/main.cjs"], {
-    cwd: import.meta.dir.replace(/\\src$/, ""),
+  electron = Bun.spawn([electronExecutable, ".dev/main.cjs"], {
+    cwd: join(projectRoot, "apps", "electron"),
     env: {
       ...rendererEnvironment,
       ELECTRON_RUN_AS_NODE: undefined,
@@ -173,22 +219,11 @@ try {
     stderr: "inherit",
   });
 
-  const stop = () => {
-    serverProcess?.kill();
-    webProcess?.kill();
-    electron?.kill();
-  };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-
   const exitCode = await electron.exited;
-  serverProcess.kill();
-  webProcess?.kill();
-  process.exit(exitCode);
+  await shutdownServices();
+  process.exitCode = receivedSignal ? (receivedSignal === "SIGINT" ? 130 : 143) : exitCode;
 } catch (error) {
-  serverProcess?.kill();
-  webProcess?.kill();
-  electron?.kill();
-  console.error(error);
-  process.exit(1);
+  if (!shutdownRequested) console.error(error);
+  await shutdownServices();
+  process.exitCode = receivedSignal ? (receivedSignal === "SIGINT" ? 130 : 143) : 1;
 }
