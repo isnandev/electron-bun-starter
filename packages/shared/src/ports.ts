@@ -8,19 +8,20 @@ export type AppPorts = Readonly<{
   webPort: number;
 }>;
 
-export function parsePort(value: string | undefined, fallback: number, name: string): number {
+export function parsePort(value: string | undefined, fallback: number, name: string, allowZero = false): number {
   if (!value) return fallback;
 
   const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`${name} must be an integer between 1 and 65535, received ${JSON.stringify(value)}`);
+  const minimum = allowZero ? 0 : 1;
+  if (!Number.isInteger(port) || port < minimum || port > 65_535) {
+    throw new Error(`${name} must be an integer between ${minimum} and 65535, received ${JSON.stringify(value)}`);
   }
   return port;
 }
 
 export function resolvePorts(environment: PortEnvironment): AppPorts {
   return {
-    serverPort: parsePort(environment.SERVER_PORT ?? environment.PORT, DEFAULT_SERVER_PORT, "SERVER_PORT"),
+    serverPort: parsePort(environment.SERVER_PORT ?? environment.PORT, DEFAULT_SERVER_PORT, "SERVER_PORT", true),
     webPort: parsePort(environment.WEB_PORT, DEFAULT_WEB_PORT, "WEB_PORT"),
   };
 }

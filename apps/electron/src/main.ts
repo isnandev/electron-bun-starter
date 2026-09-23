@@ -88,7 +88,13 @@ function waitForServerPort(child: ChildProcess): Promise<number> {
 }
 
 async function startServer(): Promise<number> {
-  const { serverPort: preferredPort } = resolvePorts(process.env);
+  const hasExplicitServerPort = Boolean(process.env.SERVER_PORT || process.env.PORT);
+  const preferredPort = hasExplicitServerPort ? resolvePorts(process.env).serverPort : 0;
+  if (!app.isPackaged && process.env.ELECTRON_SERVER_MANAGED === "1") {
+    serverPort = preferredPort;
+    return preferredPort;
+  }
+
   const runtime = serverCommand();
   serverProcess = spawn(runtime.command, runtime.args, {
     cwd: runtime.cwd,
