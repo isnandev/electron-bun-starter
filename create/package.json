@@ -1,6 +1,6 @@
 {
   "name": "create-electron-bun-starter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scaffold a Bun + Electron + React application from the Electron Bun Starter template.",
   "type": "module",
   "bin": {
