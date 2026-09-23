@@ -12,10 +12,7 @@ const environment = {
   SERVER_PORT: String(serverPort),
   PORT: String(serverPort),
   WEB_PORT: String(webPort),
-  VITE_SERVER_PORT: String(serverPort),
-  VITE_API_URL: serverUrl(serverPort),
   APP_AUTH_TOKEN: sessionToken,
-  VITE_APP_AUTH_TOKEN: sessionToken,
 };
 
 console.log(`Starting web on ${webUrl(webPort)} and Bun on ${serverUrl(serverPort)}`);

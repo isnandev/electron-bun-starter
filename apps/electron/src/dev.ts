@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { resolvePorts, serverUrl, webUrl } from "../../../packages/shared/src/ports";
+import { resolvePorts, webUrl } from "../../../packages/shared/src/ports";
 import { findAvailablePort, generateSessionToken } from "../../../packages/shared/src/ports-runtime";
 
 const preferredPorts = resolvePorts(process.env);
@@ -13,10 +13,7 @@ const rendererEnvironment = {
   SERVER_PORT: String(serverPort),
   PORT: String(serverPort),
   WEB_PORT: String(webPort),
-  VITE_SERVER_PORT: String(serverPort),
-  VITE_API_URL: serverUrl(serverPort),
   APP_AUTH_TOKEN: sessionToken,
-  VITE_APP_AUTH_TOKEN: sessionToken,
 };
 
 async function isRendererReady(url: string): Promise<boolean> {

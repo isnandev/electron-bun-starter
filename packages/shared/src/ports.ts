@@ -36,36 +36,11 @@ export function webUrl(port: number): string {
 export type AppConfig = Readonly<{
   apiUrl: string;
   apiPort: number;
-  apiToken: string;
 }>;
 
 export function resolveApiConfig(): AppConfig {
-  const globalScope = globalThis as unknown as {
-    appConfig?: AppConfig;
-    process?: { env?: Record<string, string | undefined> };
-  };
-
-  if (globalScope.appConfig) {
-    return globalScope.appConfig;
-  }
-
-  const env = globalScope.process?.env;
-  const importMeta = import.meta as unknown as { env?: Record<string, string | undefined> };
-  const importMetaEnv = importMeta.env;
-
-  const port = parsePort(
-    importMetaEnv?.VITE_SERVER_PORT ?? env?.SERVER_PORT ?? env?.PORT,
-    DEFAULT_SERVER_PORT,
-    "SERVER_PORT",
-  );
-
-  const url = importMetaEnv?.VITE_API_URL ?? env?.VITE_API_URL ?? "";
-  const token = importMetaEnv?.VITE_APP_AUTH_TOKEN ?? env?.APP_AUTH_TOKEN ?? "";
-
   return {
-    apiUrl: url,
-    apiPort: port,
-    apiToken: token,
+    apiUrl: "",
+    apiPort: DEFAULT_SERVER_PORT,
   };
 }
-

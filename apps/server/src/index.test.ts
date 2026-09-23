@@ -17,9 +17,16 @@ describe("server", () => {
   });
 
   it("handles OPTIONS preflight without requiring token", async () => {
-    const response = handleRequest(new Request("http://localhost/api/health", { method: "OPTIONS" }), "secret");
+    const response = handleRequest(new Request("http://127.0.0.1/api/health", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://127.0.0.1:5174",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "x-app-token",
+      },
+    }), "secret");
     expect(response.status).toBe(204);
-    expect(response.headers.get("Access-Control-Allow-Methods")).toBeDefined();
+    expect(response.headers.get("Access-Control-Allow-Methods")).toBe("GET");
   });
 
   it("rejects unauthorized requests when token is configured", async () => {
@@ -52,10 +59,10 @@ describe("server", () => {
   it("applies host isolation to CORS origins", async () => {
     const allowedLocal = handleRequest(
       new Request("http://localhost/api/health", {
-        headers: { origin: "http://localhost:5174" },
+        headers: { origin: "http://127.0.0.1:5174" },
       })
     );
-    expect(allowedLocal.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:5174");
+    expect(allowedLocal.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:5174");
 
     const foreignOrigin = handleRequest(
       new Request("http://localhost/api/health", {

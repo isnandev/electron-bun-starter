@@ -2,9 +2,41 @@ import { useEffect, useState } from "react";
 import { Effect } from "effect";
 import { createApiClient, resolveApiConfig } from "@electron-bun-starter/shared";
 
+type ServerApiBridge = Readonly<{
+  getHealth: () => Promise<unknown>;
+  getWelcome: () => Promise<unknown>;
+}>;
+
+declare global {
+  interface Window {
+    serverApi?: ServerApiBridge;
+  }
+}
+
+function createBridgeFetch(bridge: ServerApiBridge): typeof fetch {
+  return async (input) => {
+    const inputUrl = input instanceof Request ? input.url : input.toString();
+    const pathname = new URL(inputUrl, "http://electron-bun-starter.local").pathname;
+    const readEndpoint = pathname === "/api/health"
+      ? bridge.getHealth
+      : pathname === "/api/welcome"
+        ? bridge.getWelcome
+        : undefined;
+
+    if (!readEndpoint) return new Response("Not Found", { status: 404 });
+
+    const data = await readEndpoint();
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+}
+
 export function getApiClient() {
   const config = resolveApiConfig();
-  return createApiClient(config.apiUrl, { token: config.apiToken });
+  const bridge = typeof window === "undefined" ? undefined : window.serverApi;
+  return createApiClient(config.apiUrl, bridge ? { fetch: createBridgeFetch(bridge) } : {});
 }
 
 export type HealthData = Effect.Effect.Success<ReturnType<typeof getApiClient>["health"]>;

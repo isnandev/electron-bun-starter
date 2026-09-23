@@ -1,20 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-let config: { apiUrl?: string; apiPort?: number; apiToken?: string } = {};
 try {
-  config = (ipcRenderer.sendSync("app:get-config") as typeof config) ?? {};
-} catch {
-  // If sync config call fails, window controls must still work
-}
-
-try {
-  contextBridge.exposeInMainWorld("appConfig", Object.freeze({
-    apiUrl: typeof config.apiUrl === "string" ? config.apiUrl : "",
-    apiPort: typeof config.apiPort === "number" ? config.apiPort : 0,
-    apiToken: typeof config.apiToken === "string" ? config.apiToken : "",
+  contextBridge.exposeInMainWorld("serverApi", Object.freeze({
+    getHealth: () => ipcRenderer.invoke("server:get-health"),
+    getWelcome: () => ipcRenderer.invoke("server:get-welcome"),
   }));
 } catch {
-  // Ignore if already exposed
+  console.error("Failed to expose serverApi");
 }
 
 try {

@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolvePorts, serverUrl } from "../../../packages/shared/src/ports";
-import { findAvailablePort, generateSessionToken } from "../../../packages/shared/src/ports-runtime";
+import { generateSessionToken } from "../../../packages/shared/src/ports-runtime";
 
 let serverProcess: ChildProcess | undefined;
 let serverPort: number | undefined;
@@ -52,24 +52,58 @@ function serverCommand(): { command: string; args: string[]; cwd: string } {
   };
 }
 
+function waitForServerPort(child: ChildProcess): Promise<number> {
+  return new Promise((resolve, reject) => {
+    if (!child.stdout) {
+      reject(new Error("Bun server stdout is unavailable"));
+      return;
+    }
+
+    let output = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      finish(new Error("Bun server did not report its bound port"));
+    }, 20_000);
+
+    const finish = (error?: Error, port?: number) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else if (port !== undefined) resolve(port);
+    };
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      if (!app.isPackaged) process.stdout.write(text);
+      output = `${output}${text}`.slice(-256);
+      const match = /ELECTRON_BUN_SERVER_READY=(\d+)/.exec(output);
+      if (match) finish(undefined, Number(match[1]));
+    });
+    child.once("error", (error) => finish(error));
+    child.once("exit", (code, signal) => {
+      finish(new Error(`Bun server exited before binding (code ${code}, signal ${signal})`));
+    });
+  });
+}
+
 async function startServer(): Promise<number> {
   const { serverPort: preferredPort } = resolvePorts(process.env);
-  const port = await findAvailablePort(preferredPort);
-  serverPort = port;
   const runtime = serverCommand();
   serverProcess = spawn(runtime.command, runtime.args, {
     cwd: runtime.cwd,
     env: {
       ...process.env,
-      SERVER_PORT: String(port),
-      PORT: String(port),
+      SERVER_PORT: String(preferredPort),
+      PORT: String(preferredPort),
       APP_AUTH_TOKEN: sessionToken,
     },
-    stdio: app.isPackaged ? "ignore" : "inherit",
+    stdio: ["ignore", "pipe", app.isPackaged ? "ignore" : "inherit"],
     windowsHide: app.isPackaged,
     shell: false,
   });
-  return port;
+  serverPort = await waitForServerPort(serverProcess);
+  return serverPort;
 }
 
 async function waitForServer(port: number): Promise<void> {
@@ -130,12 +164,6 @@ async function createWindow(): Promise<void> {
     window.webContents.send("window:maximized-change", false);
   });
 
-  window.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-    details.requestHeaders["X-Electron-Bun-Port"] = String(port);
-    details.requestHeaders["x-app-token"] = sessionToken;
-    callback({ cancel: false, requestHeaders: details.requestHeaders });
-  });
-
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (rendererUrl) {
     if (process.env.ELECTRON_RENDERER_READY !== "1" && /^https?:\/\//.test(rendererUrl)) {
@@ -166,14 +194,25 @@ function getTargetWindow(event?: Electron.IpcMainEvent): BrowserWindow | undefin
   return mainWindow ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 }
 
-app.whenReady().then(() => {
-  ipcMain.on("app:get-config", (event) => {
-    event.returnValue = {
-      apiUrl: serverPort ? `http://127.0.0.1:${serverPort}` : "",
-      apiPort: serverPort ?? 0,
-      apiToken: sessionToken,
-    };
+async function requestServer(
+  event: Electron.IpcMainInvokeEvent,
+  endpoint: "/api/health" | "/api/welcome",
+): Promise<unknown> {
+  if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Server API is only available to the main application frame");
+  }
+  if (!serverPort) throw new Error("Bun server is not ready");
+
+  const response = await fetch(`${serverUrl(serverPort)}${endpoint}`, {
+    headers: { "x-app-token": sessionToken },
   });
+  if (!response.ok) throw new Error(`Server request failed with status ${response.status}`);
+  return response.json();
+}
+
+app.whenReady().then(() => {
+  ipcMain.handle("server:get-health", (event) => requestServer(event, "/api/health"));
+  ipcMain.handle("server:get-welcome", (event) => requestServer(event, "/api/welcome"));
   ipcMain.on("window:minimize", (event) => {
     const win = getTargetWindow(event);
     win?.minimize();

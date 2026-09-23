@@ -7,7 +7,7 @@ import { resolvePorts } from "../../packages/shared/src/ports";
 export default defineConfig(({ mode }) => {
   const environment = loadEnv(mode, process.cwd(), "");
   const { serverPort, webPort } = resolvePorts({ ...process.env, ...environment });
-  const authToken = environment.VITE_APP_AUTH_TOKEN || process.env.APP_AUTH_TOKEN;
+  const authToken = environment.APP_AUTH_TOKEN || process.env.APP_AUTH_TOKEN;
 
   return {
     base: "./",

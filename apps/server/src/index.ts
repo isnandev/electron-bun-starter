@@ -2,7 +2,10 @@ import { Schema } from "effect";
 import { HealthResponse, WelcomeResponse } from "@electron-bun-starter/contracts";
 import { resolvePorts } from "@electron-bun-starter/shared";
 
-const port = resolvePorts(Bun.env).serverPort;
+const { serverPort: port, webPort } = resolvePorts(Bun.env);
+const allowedWebOrigin = `http://127.0.0.1:${webPort}`;
+const corsPaths = new Set(["/api/health", "/api/welcome"]);
+const corsHeaders = new Set(["authorization", "x-app-token"]);
 
 export function isAuthorized(request: Request, expectedToken = Bun.env.APP_AUTH_TOKEN): boolean {
   if (!expectedToken) return true;
@@ -16,27 +19,21 @@ export function isAuthorized(request: Request, expectedToken = Bun.env.APP_AUTH_
 export function withCors(response: Response, request: Request): Response {
   const headers = new Headers(response.headers);
   const origin = request.headers.get("origin");
+  const pathname = new URL(request.url).pathname;
+  const isCorsRoute = corsPaths.has(pathname) && ["GET", "OPTIONS"].includes(request.method);
 
-  // Host isolation: allow local origins or "null" (file:// in Electron)
-  const isAllowedOrigin =
-    !origin ||
-    origin === "null" ||
-    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-
-  if (origin && isAllowedOrigin) {
+  // CORS is for the configured local web client. Electron uses the preload IPC bridge.
+  if (origin) headers.set("Vary", "Origin");
+  if (origin === allowedWebOrigin && isCorsRoute) {
     headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Vary", "Origin");
-  } else if (!origin) {
-    headers.set("Access-Control-Allow-Origin", "*");
   }
 
   if (request.method === "OPTIONS") {
-    headers.set("Access-Control-Allow-Methods", "GET,HEAD,PUT,POST,DELETE,PATCH");
-    const requestedHeaders = request.headers.get("Access-Control-Request-Headers");
-    headers.set(
-      "Access-Control-Allow-Headers",
-      requestedHeaders ?? "Content-Type, Authorization, x-app-token, X-Electron-Bun-Port"
-    );
+    // Browsers omit credentials on preflight. Keep this unauthenticated response narrow;
+    // the actual API request still requires the session token.
+    headers.set("Access-Control-Allow-Methods", "GET");
+    headers.set("Access-Control-Allow-Headers", "Authorization, X-App-Token");
+    headers.set("Access-Control-Max-Age", "600");
   }
 
   return new Response(response.body, {
@@ -50,6 +47,18 @@ export function handleRequest(request: Request, overrideToken?: string): Respons
   const { pathname } = new URL(request.url);
 
   if (request.method === "OPTIONS") {
+    const requestedMethod = request.headers.get("Access-Control-Request-Method")?.toUpperCase();
+    const requestedHeaders = (request.headers.get("Access-Control-Request-Headers") ?? "")
+      .split(",")
+      .map((header) => header.trim().toLowerCase())
+      .filter(Boolean);
+    const validPreflight =
+      request.headers.get("origin") === allowedWebOrigin &&
+      corsPaths.has(pathname) &&
+      requestedMethod === "GET" &&
+      requestedHeaders.every((header) => corsHeaders.has(header));
+
+    if (!validPreflight) return new Response(null, { status: 403 });
     return withCors(new Response(null, { status: 204 }), request);
   }
 
@@ -82,17 +91,18 @@ export function handleRequest(request: Request, overrideToken?: string): Respons
 }
 
 if (import.meta.main) {
+  let server: ReturnType<typeof Bun.serve>;
   try {
-    const server = Bun.serve({ port, fetch: (req) => handleRequest(req) });
-    console.log(`Bun server listening on http://127.0.0.1:${server.port}`);
+    server = Bun.serve({ hostname: "127.0.0.1", port, fetch: (req) => handleRequest(req) });
   } catch (error: unknown) {
     const err = error as { code?: string };
     if (err?.code === "EADDRINUSE" && port !== 0) {
       console.warn(`Port ${port} in use, allocating ephemeral port...`);
-      const server = Bun.serve({ port: 0, fetch: (req) => handleRequest(req) });
-      console.log(`Bun server listening on http://127.0.0.1:${server.port}`);
+      server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => handleRequest(req) });
     } else {
       throw error;
     }
   }
+  console.log(`ELECTRON_BUN_SERVER_READY=${server.port}`);
+  console.log(`Bun server listening on http://127.0.0.1:${server.port}`);
 }
